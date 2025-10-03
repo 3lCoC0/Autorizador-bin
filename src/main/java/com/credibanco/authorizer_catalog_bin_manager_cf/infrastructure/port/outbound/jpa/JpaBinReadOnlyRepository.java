@@ -1,6 +1,7 @@
 package com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.port.outbound.jpa;
 
 import com.credibanco.authorizer_catalog_bin_manager_cf.application.subtype.port.outbound.BinReadOnlyRepository;
+import com.credibanco.authorizer_catalog_bin_manager_cf.application.subtype.port.outbound.BinReadOnlyRepository.BinExtConfig;
 import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.port.outbound.jpa.repository.BinJpaRepository;
 import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.util.BlockingExecutor;
 import lombok.RequiredArgsConstructor;
