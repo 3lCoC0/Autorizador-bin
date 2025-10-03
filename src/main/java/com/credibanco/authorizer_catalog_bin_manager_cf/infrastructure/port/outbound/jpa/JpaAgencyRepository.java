@@ -48,19 +48,22 @@ public class JpaAgencyRepository implements AgencyRepository {
     public Flux<Agency> findAll(String subtypeCode, String status, String search, int page, int size) {
         int p = Math.max(0, page);
         int s = Math.max(1, size);
-        Specification<AgencyEntity> spec = Specification.where(null);
+        Specification<AgencyEntity> spec = null;
         if (subtypeCode != null) {
-            spec = spec.and((root, query, cb) -> cb.equal(root.get("id").get("subtypeCode"), subtypeCode));
+            Specification<AgencyEntity> subtypeSpec = (root, query, cb) -> cb.equal(root.get("id").get("subtypeCode"), subtypeCode);
+            spec = Specification.where(subtypeSpec);
         }
         if (status != null) {
-            spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), status));
+            Specification<AgencyEntity> statusSpec = (root, query, cb) -> cb.equal(root.get("status"), status);
+            spec = spec == null ? Specification.where(statusSpec) : spec.and(statusSpec);
         }
         if (search != null) {
             String like = "%" + search.toUpperCase() + "%";
-            spec = spec.and((root, query, cb) -> cb.or(
+            Specification<AgencyEntity> searchSpec = (root, query, cb) -> cb.or(
                     cb.like(cb.upper(root.get("name")), like),
                     cb.like(cb.upper(root.get("id").get("agencyCode")), like)
-            ));
+            );
+            spec = spec == null ? Specification.where(searchSpec) : spec.and(searchSpec);
         }
         Specification<AgencyEntity> finalSpec = spec;
         return blockingExecutor.flux(() -> {

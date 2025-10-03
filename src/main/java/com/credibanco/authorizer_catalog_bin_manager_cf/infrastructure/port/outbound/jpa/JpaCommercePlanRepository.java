@@ -38,16 +38,18 @@ public class JpaCommercePlanRepository implements CommercePlanRepository {
     public Flux<CommercePlan> findAll(String status, String q, int page, int size) {
         int p = Math.max(0, page);
         int s = Math.max(1, size);
-        Specification<CommercePlanEntity> spec = Specification.where(null);
+        Specification<CommercePlanEntity> spec = null;
         if (status != null) {
-            spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), status));
+            Specification<CommercePlanEntity> statusSpec = (root, query, cb) -> cb.equal(root.get("status"), status);
+            spec = Specification.where(statusSpec);
         }
         if (q != null) {
             String like = "%" + q.toUpperCase() + "%";
-            spec = spec.and((root, query, cb) -> cb.or(
+            Specification<CommercePlanEntity> searchSpec = (root, query, cb) -> cb.or(
                     cb.like(cb.upper(root.get("planCode")), like),
                     cb.like(cb.upper(root.get("planName")), like)
-            ));
+            );
+            spec = spec == null ? Specification.where(searchSpec) : spec.and(searchSpec);
         }
         Specification<CommercePlanEntity> finalSpec = spec;
         return blockingExecutor.flux(() -> {

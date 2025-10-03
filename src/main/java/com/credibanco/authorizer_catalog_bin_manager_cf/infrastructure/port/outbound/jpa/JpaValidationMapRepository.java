@@ -67,15 +67,18 @@ public class JpaValidationMapRepository implements ValidationMapRepository {
     private Flux<ValidationMap> findByFilters(String subtypeCode, String bin, String status, int page, int size) {
         int p = Math.max(0, page);
         int s = Math.max(1, size);
-        Specification<SubtypeValidationMapEntity> spec = Specification.where(null);
+        Specification<SubtypeValidationMapEntity> spec = null;
         if (subtypeCode != null) {
-            spec = spec.and((root, query, cb) -> cb.equal(root.get("subtypeCode"), subtypeCode));
+            Specification<SubtypeValidationMapEntity> subtypeSpec = (root, query, cb) -> cb.equal(root.get("subtypeCode"), subtypeCode);
+            spec = Specification.where(subtypeSpec);
         }
         if (bin != null) {
-            spec = spec.and((root, query, cb) -> cb.equal(root.get("bin"), bin));
+            Specification<SubtypeValidationMapEntity> binSpec = (root, query, cb) -> cb.equal(root.get("bin"), bin);
+            spec = spec == null ? Specification.where(binSpec) : spec.and(binSpec);
         }
         if (status != null) {
-            spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), status));
+            Specification<SubtypeValidationMapEntity> statusSpec = (root, query, cb) -> cb.equal(root.get("status"), status);
+            spec = spec == null ? Specification.where(statusSpec) : spec.and(statusSpec);
         }
         Specification<SubtypeValidationMapEntity> finalSpec = spec;
         Sort sort = Sort.by("subtypeCode").ascending()

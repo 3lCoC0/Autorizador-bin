@@ -56,16 +56,18 @@ public class JpaValidationRepository implements ValidationRepository {
     public Flux<Validation> findAll(String status, String search, int page, int size) {
         int p = Math.max(0, page);
         int s = Math.max(1, size);
-        Specification<SubtypeValidationEntity> spec = Specification.where(null);
+        Specification<SubtypeValidationEntity> spec = null;
         if (status != null) {
-            spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), status));
+            Specification<SubtypeValidationEntity> statusSpec = (root, query, cb) -> cb.equal(root.get("status"), status);
+            spec = Specification.where(statusSpec);
         }
         if (search != null) {
             String like = "%" + search.toUpperCase() + "%";
-            spec = spec.and((root, query, cb) -> cb.or(
+            Specification<SubtypeValidationEntity> searchSpec = (root, query, cb) -> cb.or(
                     cb.like(cb.upper(root.get("code")), like),
                     cb.like(cb.upper(root.get("description")), like)
-            ));
+            );
+            spec = spec == null ? Specification.where(searchSpec) : spec.and(searchSpec);
         }
         Specification<SubtypeValidationEntity> finalSpec = spec;
         return blockingExecutor.flux(() -> {
