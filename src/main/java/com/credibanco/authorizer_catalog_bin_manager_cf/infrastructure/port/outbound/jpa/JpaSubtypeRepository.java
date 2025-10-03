@@ -56,15 +56,18 @@ public class JpaSubtypeRepository implements SubtypeRepository {
     public Flux<Subtype> findAll(String binFilter, String codeFilter, String statusFilter, int page, int size) {
         int p = Math.max(0, page);
         int s = Math.max(1, size);
-        Specification<SubtypeEntity> spec = Specification.where(null);
+        Specification<SubtypeEntity> spec = null;
         if (binFilter != null) {
-            spec = spec.and((root, query, cb) -> cb.equal(root.get("id").get("bin"), binFilter));
+            Specification<SubtypeEntity> binSpec = (root, query, cb) -> cb.equal(root.get("id").get("bin"), binFilter);
+            spec = Specification.where(binSpec);
         }
         if (codeFilter != null) {
-            spec = spec.and((root, query, cb) -> cb.equal(root.get("id").get("subtypeCode"), codeFilter));
+            Specification<SubtypeEntity> codeSpec = (root, query, cb) -> cb.equal(root.get("id").get("subtypeCode"), codeFilter);
+            spec = spec == null ? Specification.where(codeSpec) : spec.and(codeSpec);
         }
         if (statusFilter != null) {
-            spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), statusFilter));
+            Specification<SubtypeEntity> statusSpec = (root, query, cb) -> cb.equal(root.get("status"), statusFilter);
+            spec = spec == null ? Specification.where(statusSpec) : spec.and(statusSpec);
         }
         Specification<SubtypeEntity> finalSpec = spec;
         return blockingExecutor.flux(() -> {
