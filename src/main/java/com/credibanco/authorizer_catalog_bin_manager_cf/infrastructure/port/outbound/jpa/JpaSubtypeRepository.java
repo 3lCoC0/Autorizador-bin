@@ -5,6 +5,7 @@ import com.credibanco.authorizer_catalog_bin_manager_cf.domain.subtype.Subtype;
 import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.port.outbound.jpa.entity.SubtypeEntity;
 import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.port.outbound.jpa.entity.SubtypeEntityId;
 import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.port.outbound.jpa.repository.SubtypeJpaRepository;
+import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.util.BlockingExecutor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -12,7 +13,6 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 import java.util.List;
 
@@ -21,11 +21,11 @@ import java.util.List;
 public class JpaSubtypeRepository implements SubtypeRepository {
 
     private final SubtypeJpaRepository repository;
+    private final BlockingExecutor blockingExecutor;
 
     @Override
     public Mono<Boolean> existsByPk(String bin, String subtypeCode) {
-        return Mono.fromCallable(() -> repository.existsById(new SubtypeEntityId(bin, subtypeCode)))
-                .subscribeOn(Schedulers.boundedElastic());
+        return blockingExecutor.mono(() -> repository.existsById(new SubtypeEntityId(bin, subtypeCode)));
     }
 
     @Override
@@ -33,24 +33,23 @@ public class JpaSubtypeRepository implements SubtypeRepository {
         if (binExt == null) {
             return Mono.just(false);
         }
-        return Mono.fromCallable(() -> repository.existsByBinAndBinExt(bin, binExt))
-                .subscribeOn(Schedulers.boundedElastic());
+        return blockingExecutor.mono(() -> repository.existsByBinAndBinExt(bin, binExt));
     }
 
     @Override
     public Mono<Subtype> save(Subtype entity) {
-        return Mono.fromCallable(() -> {
-                    SubtypeEntityId id = new SubtypeEntityId(entity.bin(), entity.subtypeCode());
-                    repository.save(SubtypeEntity.fromDomain(entity));
-                    return repository.findById(id).map(SubtypeEntity::toDomain).orElseThrow();
-                })
-                .subscribeOn(Schedulers.boundedElastic());
+        return blockingExecutor.mono(() -> {
+            SubtypeEntityId id = new SubtypeEntityId(entity.bin(), entity.subtypeCode());
+            repository.save(SubtypeEntity.fromDomain(entity));
+            return repository.findById(id).map(SubtypeEntity::toDomain).orElseThrow();
+        });
     }
 
     @Override
     public Mono<Subtype> findByPk(String bin, String subtypeCode) {
-        return Mono.defer(() -> Mono.justOrEmpty(repository.findById(new SubtypeEntityId(bin, subtypeCode)).map(SubtypeEntity::toDomain)))
-                .subscribeOn(Schedulers.boundedElastic());
+        return blockingExecutor.mono(() -> repository.findById(new SubtypeEntityId(bin, subtypeCode))
+                .map(SubtypeEntity::toDomain)
+                .orElse(null));
     }
 
     @Override
@@ -68,13 +67,12 @@ public class JpaSubtypeRepository implements SubtypeRepository {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), statusFilter));
         }
         Specification<SubtypeEntity> finalSpec = spec;
-        return Flux.defer(() -> {
-                    List<Subtype> subtypes = repository.findAll(finalSpec,
-                                    PageRequest.of(p, s, Sort.by("id.bin").ascending().and(Sort.by("id.subtypeCode").ascending())))
-                            .map(SubtypeEntity::toDomain)
-                            .getContent();
-                    return Flux.fromIterable(subtypes);
-                })
-                .subscribeOn(Schedulers.boundedElastic());
+        return blockingExecutor.flux(() -> {
+            List<Subtype> subtypes = repository.findAll(finalSpec,
+                            PageRequest.of(p, s, Sort.by("id.bin").ascending().and(Sort.by("id.subtypeCode").ascending())))
+                    .map(SubtypeEntity::toDomain)
+                    .getContent();
+            return subtypes;
+        });
     }
 }

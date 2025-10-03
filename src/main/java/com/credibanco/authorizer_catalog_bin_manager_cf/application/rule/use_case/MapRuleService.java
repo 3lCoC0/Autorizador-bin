@@ -8,8 +8,8 @@ import com.credibanco.authorizer_catalog_bin_manager_cf.domain.rule.ValidationDa
 import com.credibanco.authorizer_catalog_bin_manager_cf.domain.rule.ValidationMap;
 import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.exception.AppError;
 import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.exception.AppException;
+import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.util.BlockingTransactionExecutor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.transaction.reactive.TransactionalOperator;
 import reactor.core.publisher.Mono;
 
 import java.time.OffsetDateTime;
@@ -19,7 +19,7 @@ public record MapRuleService(
         ValidationRepository validations,
         ValidationMapRepository maps,
         SubtypeReadOnlyRepository subtypes,
-        TransactionalOperator tx
+        BlockingTransactionExecutor txExecutor
 ) implements MapRuleUseCase {
 
     @Override
@@ -41,35 +41,34 @@ public record MapRuleService(
 
         var now = OffsetDateTime.now();
 
-        return ensureSubtype.then(ensurePair)
-                .then(validations.findByCode(validationCode)
-                        .switchIfEmpty(Mono.<com.credibanco.authorizer_catalog_bin_manager_cf.domain.rule.Validation>error(
-                                new AppException(AppError.RULES_VALIDATION_NOT_FOUND, "code=" + validationCode))))
-                .flatMap(v -> {
-                    boolean vigente = "A".equals(v.status())
-                            && (v.validFrom() == null || !v.validFrom().isAfter(now))
-                            && (v.validTo() == null || !v.validTo().isBefore(now));
+        return txExecutor.executeMono(() ->
+                        ensureSubtype.then(ensurePair)
+                                .then(validations.findByCode(validationCode)
+                                        .switchIfEmpty(Mono.<com.credibanco.authorizer_catalog_bin_manager_cf.domain.rule.Validation>error(
+                                                new AppException(AppError.RULES_VALIDATION_NOT_FOUND, "code=" + validationCode))))
+                                .flatMap(v -> {
+                                    boolean vigente = "A".equals(v.status())
+                                            && (v.validFrom() == null || !v.validFrom().isAfter(now))
+                                            && (v.validTo() == null || !v.validTo().isBefore(now));
 
-                    if (!vigente) {
-                        return Mono.<ValidationMap>error(new AppException(
-                                AppError.RULES_MAP_INVALID_DATA, "VALIDATION no activa o fuera de vigencia"));
-                    }
+                                    if (!vigente) {
+                                        return Mono.<ValidationMap>error(new AppException(
+                                                AppError.RULES_MAP_INVALID_DATA, "VALIDATION no activa o fuera de vigencia"));
+                                    }
 
-                    final Coerced coerced;
-                    try {
-                        coerced = coerceValue(v.dataType(), value);
-                    } catch (IllegalArgumentException iae) {
-                        return Mono.<ValidationMap>error(new AppException(AppError.RULES_MAP_INVALID_DATA, iae.getMessage()));
-                    }
+                                    final Coerced coerced;
+                                    try {
+                                        coerced = coerceValue(v.dataType(), value);
+                                    } catch (IllegalArgumentException iae) {
+                                        return Mono.<ValidationMap>error(new AppException(AppError.RULES_MAP_INVALID_DATA, iae.getMessage()));
+                                    }
 
-                    // evitar duplicado exacto (NK: subtypeCode, bin, validationId)
-                    return maps.findByNaturalKey(subtypeCode, bin, v.validationId())
-                            .flatMap(existing -> Mono.<ValidationMap>error(new AppException(
-                                    AppError.RULES_MAP_ALREADY_EXISTS,
-                                    "Ya existe mapping para code=" + validationCode + " en subtype="
-                                            + subtypeCode + ", bin=" + bin)))
-                            .switchIfEmpty(Mono.defer(() ->
-                                    tx.execute(st -> maps.save(
+                                    return maps.findByNaturalKey(subtypeCode, bin, v.validationId())
+                                            .flatMap(existing -> Mono.<ValidationMap>error(new AppException(
+                                                    AppError.RULES_MAP_ALREADY_EXISTS,
+                                                    "Ya existe mapping para code=" + validationCode + " en subtype="
+                                                            + subtypeCode + ", bin=" + bin)))
+                                            .switchIfEmpty(maps.save(
                                                     ValidationMap.createNew(
                                                             subtypeCode,
                                                             bin,
@@ -78,10 +77,9 @@ public record MapRuleService(
                                                             coerced.vn(),
                                                             coerced.vt(),
                                                             by
-                                                    )))
-                                            .next()
-                            ));
-                });
+                                                    )));
+                                })
+                );
     }
 
     @Override
@@ -90,22 +88,23 @@ public record MapRuleService(
             return Mono.<ValidationMap>error(new AppException(AppError.RULES_MAP_INVALID_DATA, "status debe ser 'A' o 'I'"));
         }
 
-        return validations.findByCode(validationCode)
-                .switchIfEmpty(Mono.<com.credibanco.authorizer_catalog_bin_manager_cf.domain.rule.Validation>error(
-                        new AppException(AppError.RULES_VALIDATION_NOT_FOUND, "code=" + validationCode)))
-                .flatMap(v -> maps.findByNaturalKey(subtypeCode, bin, v.validationId()))
-                .switchIfEmpty(Mono.<ValidationMap>error(new AppException(
-                        AppError.RULES_MAP_NOT_FOUND,
-                        "No hay mapping para subtype=" + subtypeCode + ", bin=" + bin + ", code=" + validationCode)))
-                .map(m -> {
-                    try {
-                        return m.changeStatus(newStatus, by);
-                    } catch (IllegalArgumentException iae) {
-                        throw new AppException(AppError.RULES_MAP_INVALID_DATA, iae.getMessage());
-                    }
-                })
-                .flatMap(maps::save)
-                .as(tx::transactional);
+        return txExecutor.executeMono(() ->
+                        validations.findByCode(validationCode)
+                                .switchIfEmpty(Mono.<com.credibanco.authorizer_catalog_bin_manager_cf.domain.rule.Validation>error(
+                                        new AppException(AppError.RULES_VALIDATION_NOT_FOUND, "code=" + validationCode)))
+                                .flatMap(v -> maps.findByNaturalKey(subtypeCode, bin, v.validationId()))
+                                .switchIfEmpty(Mono.<ValidationMap>error(new AppException(
+                                        AppError.RULES_MAP_NOT_FOUND,
+                                        "No hay mapping para subtype=" + subtypeCode + ", bin=" + bin + ", code=" + validationCode)))
+                                .map(m -> {
+                                    try {
+                                        return m.changeStatus(newStatus, by);
+                                    } catch (IllegalArgumentException iae) {
+                                        throw new AppException(AppError.RULES_MAP_INVALID_DATA, iae.getMessage());
+                                    }
+                                })
+                                .flatMap(maps::save)
+                );
     }
 
     // ----------------- Helpers -----------------

@@ -4,6 +4,7 @@ import com.credibanco.authorizer_catalog_bin_manager_cf.application.rule.port.ou
 import com.credibanco.authorizer_catalog_bin_manager_cf.domain.rule.Validation;
 import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.port.outbound.jpa.entity.SubtypeValidationEntity;
 import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.port.outbound.jpa.repository.SubtypeValidationJpaRepository;
+import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.util.BlockingExecutor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -11,7 +12,6 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 import java.util.List;
 
@@ -20,35 +20,36 @@ import java.util.List;
 public class JpaValidationRepository implements ValidationRepository {
 
     private final SubtypeValidationJpaRepository repository;
+    private final BlockingExecutor blockingExecutor;
 
     @Override
     public Mono<Boolean> existsByCode(String code) {
-        return Mono.fromCallable(() -> repository.existsByCode(code))
-                .subscribeOn(Schedulers.boundedElastic());
+        return blockingExecutor.mono(() -> repository.existsByCode(code));
     }
 
     @Override
     public Mono<Validation> save(Validation v) {
-        return Mono.fromCallable(() -> {
-                    SubtypeValidationEntity entity = repository.findByCode(v.code())
-                            .orElseGet(SubtypeValidationEntity::new);
-                    entity.updateFromDomain(v);
-                    SubtypeValidationEntity saved = repository.save(entity);
-                    return repository.findById(saved.getValidationId()).orElse(saved).toDomain();
-                })
-                .subscribeOn(Schedulers.boundedElastic());
+        return blockingExecutor.mono(() -> {
+            SubtypeValidationEntity entity = repository.findByCode(v.code())
+                    .orElseGet(SubtypeValidationEntity::new);
+            entity.updateFromDomain(v);
+            SubtypeValidationEntity saved = repository.save(entity);
+            return repository.findById(saved.getValidationId()).orElse(saved).toDomain();
+        });
     }
 
     @Override
     public Mono<Validation> findByCode(String code) {
-        return Mono.defer(() -> Mono.justOrEmpty(repository.findByCode(code).map(SubtypeValidationEntity::toDomain)))
-                .subscribeOn(Schedulers.boundedElastic());
+        return blockingExecutor.mono(() -> repository.findByCode(code)
+                .map(SubtypeValidationEntity::toDomain)
+                .orElse(null));
     }
 
     @Override
     public Mono<Validation> findById(Long id) {
-        return Mono.defer(() -> Mono.justOrEmpty(repository.findById(id).map(SubtypeValidationEntity::toDomain)))
-                .subscribeOn(Schedulers.boundedElastic());
+        return blockingExecutor.mono(() -> repository.findById(id)
+                .map(SubtypeValidationEntity::toDomain)
+                .orElse(null));
     }
 
     @Override
@@ -67,13 +68,12 @@ public class JpaValidationRepository implements ValidationRepository {
             ));
         }
         Specification<SubtypeValidationEntity> finalSpec = spec;
-        return Flux.defer(() -> {
-                    List<Validation> validations = repository.findAll(finalSpec,
-                                    PageRequest.of(p, s, Sort.by("code").ascending()))
-                            .map(SubtypeValidationEntity::toDomain)
-                            .getContent();
-                    return Flux.fromIterable(validations);
-                })
-                .subscribeOn(Schedulers.boundedElastic());
+        return blockingExecutor.flux(() -> {
+            List<Validation> validations = repository.findAll(finalSpec,
+                            PageRequest.of(p, s, Sort.by("code").ascending()))
+                    .map(SubtypeValidationEntity::toDomain)
+                    .getContent();
+            return validations;
+        });
     }
 }

@@ -5,29 +5,29 @@ import com.credibanco.authorizer_catalog_bin_manager_cf.application.plan.port.ou
 import com.credibanco.authorizer_catalog_bin_manager_cf.application.plan.port.outbound.CommercePlanRepository;
 import com.credibanco.authorizer_catalog_bin_manager_cf.application.plan.port.outbound.SubtypePlanRepository;
 import com.credibanco.authorizer_catalog_bin_manager_cf.application.plan.use_case.*;
+import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.util.BlockingTransactionExecutor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.transaction.reactive.TransactionalOperator;
 
 @Configuration
 public class PlanUseCaseConfig {
 
-    @Bean CreatePlanUseCase createPlanUseCase(CommercePlanRepository r, TransactionalOperator tx) {
-        return new CreatePlanService(r, tx);
+    @Bean CreatePlanUseCase createPlanUseCase(CommercePlanRepository r, BlockingTransactionExecutor txExecutor) {
+        return new CreatePlanService(r, txExecutor);
     }
 
     @Bean AddPlanItemUseCase addPlanItemUseCase(CommercePlanRepository pr,
                                                 CommercePlanItemRepository ir,
-                                                TransactionalOperator tx) {
-        return new AddPlanItemService(pr, ir, tx);
+                                                BlockingTransactionExecutor txExecutor) {
+        return new AddPlanItemService(pr, ir, txExecutor);
     }
     @Bean
     AssignPlanToSubtypeUseCase assignPlanToSubtypeUseCase(CommercePlanRepository pr,
                                                           SubtypePlanRepository sr,
                                                           com.credibanco.authorizer_catalog_bin_manager_cf.application.plan.port.outbound.SubtypeReadOnlyRepository subtypeRepo,
-                                                          CommercePlanItemRepository itemRepo,  // <— NUEVO
-                                                          TransactionalOperator tx) {
-        return new AssignPlanToSubtypeService(pr, sr, subtypeRepo, itemRepo, tx);
+                                                          CommercePlanItemRepository itemRepo,
+                                                          BlockingTransactionExecutor txExecutor) {
+        return new AssignPlanToSubtypeService(pr, sr, subtypeRepo, itemRepo, txExecutor);
     }
 
     @Bean GetPlanUseCase getPlanUseCase(CommercePlanRepository r) { return new GetPlanService(r); }
@@ -40,8 +40,8 @@ public class PlanUseCaseConfig {
     public ChangePlanItemStatusUseCase changePlanItemStatusUseCase(
             CommercePlanRepository pr,
             CommercePlanItemRepository ir,
-            TransactionalOperator tx
+            BlockingTransactionExecutor txExecutor
     ) {
-        return new ChangePlanItemStatusService(pr, ir, tx);
+        return new ChangePlanItemStatusService(pr, ir, txExecutor);
     }
 }

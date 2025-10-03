@@ -4,32 +4,32 @@ import com.credibanco.authorizer_catalog_bin_manager_cf.application.agency.port.
 import com.credibanco.authorizer_catalog_bin_manager_cf.application.agency.port.outbound.AgencyRepository;
 import com.credibanco.authorizer_catalog_bin_manager_cf.application.agency.port.outbound.SubtypeReadOnlyRepository;
 import com.credibanco.authorizer_catalog_bin_manager_cf.application.agency.use_case.*;
+import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.util.BlockingTransactionExecutor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.transaction.reactive.TransactionalOperator;
 
 @Configuration
 public class AgencyUseCaseConfig {
 
     @Bean
     public CreateAgencyUseCase createAgencyUseCase(
-            AgencyRepository repo, SubtypeReadOnlyRepository subtypeRepo, TransactionalOperator tx
-    ) { return new CreateAgencyService(repo, subtypeRepo, tx); }
+            AgencyRepository repo, SubtypeReadOnlyRepository subtypeRepo, BlockingTransactionExecutor txExecutor
+    ) { return new CreateAgencyService(repo, subtypeRepo, txExecutor); }
 
     @Bean
     public UpdateAgencyUseCase updateAgencyUseCase(
             AgencyRepository repo,
             SubtypeReadOnlyRepository subtypeRepo,
-            TransactionalOperator tx
+            BlockingTransactionExecutor txExecutor
     ) {
-        return new UpdateAgencyService(repo, subtypeRepo, tx);
+        return new UpdateAgencyService(repo, subtypeRepo, txExecutor);
     }
 
 
     @Bean
     public ChangeAgencyStatusUseCase changeAgencyStatusUseCase(
-            AgencyRepository repo, SubtypeReadOnlyRepository subtypeRepo, TransactionalOperator tx
-    ) { return new ChangeAgencyStatusService(repo, subtypeRepo, tx); }
+            AgencyRepository repo, SubtypeReadOnlyRepository subtypeRepo, BlockingTransactionExecutor txExecutor
+    ) { return new ChangeAgencyStatusService(repo, subtypeRepo, txExecutor); }
 
     @Bean
     public GetAgencyUseCase getAgencyUseCase(

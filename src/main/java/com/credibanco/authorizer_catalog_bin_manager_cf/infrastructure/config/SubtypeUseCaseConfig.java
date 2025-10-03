@@ -6,9 +6,9 @@ import com.credibanco.authorizer_catalog_bin_manager_cf.application.subtype.port
 import com.credibanco.authorizer_catalog_bin_manager_cf.application.subtype.port.outbound.IdTypeReadOnlyRepository;
 import com.credibanco.authorizer_catalog_bin_manager_cf.application.subtype.port.outbound.SubtypeRepository;
 import com.credibanco.authorizer_catalog_bin_manager_cf.application.subtype.use_case.*;
+import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.util.BlockingTransactionExecutor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.transaction.reactive.TransactionalOperator;
 
 @Configuration
 public class SubtypeUseCaseConfig {
@@ -18,24 +18,24 @@ public class SubtypeUseCaseConfig {
             SubtypeRepository repo,
             BinReadOnlyRepository binRepo,
             IdTypeReadOnlyRepository idTypeRepo,
-            TransactionalOperator tx
+            BlockingTransactionExecutor txExecutor
     ) {
-        return new CreateSubtypeService(repo, binRepo, idTypeRepo, tx);
+        return new CreateSubtypeService(repo, binRepo, idTypeRepo, txExecutor);
     }
 
     @Bean
     public UpdateSubtypeBasicsUseCase updateSubtypeBasicsUseCase(
-            SubtypeRepository repo, BinReadOnlyRepository binRepo, TransactionalOperator tx
+            SubtypeRepository repo, BinReadOnlyRepository binRepo, BlockingTransactionExecutor txExecutor
     ) {
-        return new UpdateSubtypeBasicsService(repo, binRepo, tx);
+        return new UpdateSubtypeBasicsService(repo, binRepo, txExecutor);
     }
     @Bean
     public ChangeSubtypeStatusUseCase changeSubtypeStatusUseCase(
             SubtypeRepository repo,
             AgencyReadOnlyRepository agencyRepo,
-            TransactionalOperator tx
+            BlockingTransactionExecutor txExecutor
     ) {
-        return new ChangeSubtypeStatusService(repo, agencyRepo, tx);
+        return new ChangeSubtypeStatusService(repo, agencyRepo, txExecutor);
     }
 
     @Bean

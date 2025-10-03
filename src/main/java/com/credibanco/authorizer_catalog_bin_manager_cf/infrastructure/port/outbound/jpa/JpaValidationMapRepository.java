@@ -4,6 +4,7 @@ import com.credibanco.authorizer_catalog_bin_manager_cf.application.rule.port.ou
 import com.credibanco.authorizer_catalog_bin_manager_cf.domain.rule.ValidationMap;
 import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.port.outbound.jpa.entity.SubtypeValidationMapEntity;
 import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.port.outbound.jpa.repository.SubtypeValidationMapJpaRepository;
+import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.util.BlockingExecutor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -11,7 +12,6 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -21,38 +21,37 @@ import java.util.List;
 public class JpaValidationMapRepository implements ValidationMapRepository {
 
     private final SubtypeValidationMapJpaRepository repository;
+    private final BlockingExecutor blockingExecutor;
 
     @Override
     public Mono<Boolean> existsActive(String subtypeCode, String bin, Long validationId) {
-        return Mono.fromCallable(() -> repository.existsBySubtypeCodeAndBinAndValidationIdAndStatus(subtypeCode, bin, validationId, "A"))
-                .subscribeOn(Schedulers.boundedElastic());
+        return blockingExecutor.mono(() -> repository.existsBySubtypeCodeAndBinAndValidationIdAndStatus(subtypeCode, bin, validationId, "A"));
     }
 
     @Override
     public Mono<ValidationMap> save(ValidationMap map) {
-        return Mono.fromCallable(() -> {
-                    SubtypeValidationMapEntity entity = repository.findBySubtypeCodeAndBinAndValidationId(map.subtypeCode(), map.bin(), map.validationId())
-                            .orElseGet(SubtypeValidationMapEntity::new);
-                    entity.updateFromDomain(map);
-                    if (entity.getCreatedAt() == null) {
-                        entity.setCreatedAt(map.createdAt() != null ? map.createdAt() : OffsetDateTime.now());
-                    }
-                    if (entity.getUpdatedAt() == null) {
-                        entity.setUpdatedAt(entity.getCreatedAt());
-                    }
-                    repository.save(entity);
-                    return repository.findBySubtypeCodeAndBinAndValidationId(map.subtypeCode(), map.bin(), map.validationId())
-                            .orElse(entity)
-                            .toDomain();
-                })
-                .subscribeOn(Schedulers.boundedElastic());
+        return blockingExecutor.mono(() -> {
+            SubtypeValidationMapEntity entity = repository.findBySubtypeCodeAndBinAndValidationId(map.subtypeCode(), map.bin(), map.validationId())
+                    .orElseGet(SubtypeValidationMapEntity::new);
+            entity.updateFromDomain(map);
+            if (entity.getCreatedAt() == null) {
+                entity.setCreatedAt(map.createdAt() != null ? map.createdAt() : OffsetDateTime.now());
+            }
+            if (entity.getUpdatedAt() == null) {
+                entity.setUpdatedAt(entity.getCreatedAt());
+            }
+            repository.save(entity);
+            return repository.findBySubtypeCodeAndBinAndValidationId(map.subtypeCode(), map.bin(), map.validationId())
+                    .orElse(entity)
+                    .toDomain();
+        });
     }
 
     @Override
     public Mono<ValidationMap> findByNaturalKey(String subtypeCode, String bin, Long validationId) {
-        return Mono.defer(() -> Mono.justOrEmpty(repository.findBySubtypeCodeAndBinAndValidationId(subtypeCode, bin, validationId)
-                        .map(SubtypeValidationMapEntity::toDomain)))
-                .subscribeOn(Schedulers.boundedElastic());
+        return blockingExecutor.mono(() -> repository.findBySubtypeCodeAndBinAndValidationId(subtypeCode, bin, validationId)
+                .map(SubtypeValidationMapEntity::toDomain)
+                .orElse(null));
     }
 
     @Override
@@ -82,13 +81,12 @@ public class JpaValidationMapRepository implements ValidationMapRepository {
         Sort sort = Sort.by("subtypeCode").ascending()
                 .and(Sort.by("bin").ascending())
                 .and(Sort.by("validationId").ascending());
-        return Flux.defer(() -> {
-                    List<ValidationMap> maps = repository.findAll(finalSpec,
-                                    PageRequest.of(p, s, sort))
-                            .map(SubtypeValidationMapEntity::toDomain)
-                            .getContent();
-                    return Flux.fromIterable(maps);
-                })
-                .subscribeOn(Schedulers.boundedElastic());
+        return blockingExecutor.flux(() -> {
+            List<ValidationMap> maps = repository.findAll(finalSpec,
+                            PageRequest.of(p, s, sort))
+                    .map(SubtypeValidationMapEntity::toDomain)
+                    .getContent();
+            return maps;
+        });
     }
 }

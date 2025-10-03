@@ -1,10 +1,10 @@
 package com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.port.outbound.jpa;
 
 import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.port.outbound.jpa.repository.SubtypeJpaRepository;
+import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.util.BlockingExecutor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 @Repository
 @RequiredArgsConstructor
@@ -14,22 +14,20 @@ public class JpaSubtypeReadOnlyRepository implements
         com.credibanco.authorizer_catalog_bin_manager_cf.application.rule.port.outbound.SubtypeReadOnlyRepository {
 
     private final SubtypeJpaRepository repository;
+    private final BlockingExecutor blockingExecutor;
 
     @Override
     public Mono<Boolean> isActive(String subtypeCode) {
-        return Mono.fromCallable(() -> repository.existsActiveBySubtypeCode(subtypeCode))
-                .subscribeOn(Schedulers.boundedElastic());
+        return blockingExecutor.mono(() -> repository.existsActiveBySubtypeCode(subtypeCode));
     }
 
     @Override
     public Mono<Boolean> existsByCode(String subtypeCode) {
-        return Mono.fromCallable(() -> repository.existsBySubtypeCode(subtypeCode))
-                .subscribeOn(Schedulers.boundedElastic());
+        return blockingExecutor.mono(() -> repository.existsBySubtypeCode(subtypeCode));
     }
 
     @Override
     public Mono<Boolean> existsByCodeAndBinEfectivo(String code, String binEfectivo) {
-        return Mono.fromCallable(() -> repository.existsBySubtypeCodeAndBin(code, binEfectivo))
-                .subscribeOn(Schedulers.boundedElastic());
+        return blockingExecutor.mono(() -> repository.existsBySubtypeCodeAndBin(code, binEfectivo));
     }
 }
