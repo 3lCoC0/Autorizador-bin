@@ -5,12 +5,12 @@ import com.credibanco.authorizer_catalog_bin_manager_cf.application.bin.port.out
 import com.credibanco.authorizer_catalog_bin_manager_cf.domain.bin.Bin;
 import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.exception.AppError;
 import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.exception.AppException;
+import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.util.BlockingTransactionExecutor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.transaction.reactive.TransactionalOperator;
 import reactor.core.publisher.Mono;
 
 @Slf4j
-public record ChangeBinStatusService(BinRepository repo, TransactionalOperator tx)
+public record ChangeBinStatusService(BinRepository repo, BlockingTransactionExecutor txExecutor)
         implements ChangeBinStatusUseCase {
 
     private static long ms(long t0) { return (System.nanoTime() - t0) / 1_000_000; }
@@ -25,16 +25,17 @@ public record ChangeBinStatusService(BinRepository repo, TransactionalOperator t
             return Mono.error(new AppException(AppError.BIN_INVALID_DATA, "status debe ser 'A' o 'I'"));
         }
 
-        return repo.findById(bin)
-                .switchIfEmpty(Mono.error(new AppException(AppError.BIN_NOT_FOUND, "bin=" + bin)))
-                .flatMap(current ->
-                        Mono.defer(() -> Mono.just(current.changeStatus(newStatus, updatedByNullable)))
-                                .onErrorMap(IllegalArgumentException.class,
-                                        e -> new AppException(AppError.BIN_INVALID_DATA, e.getMessage()))
-                                .flatMap(repo::save)
+        return txExecutor.executeMono(() ->
+                        repo.findById(bin)
+                                .switchIfEmpty(Mono.error(new AppException(AppError.BIN_NOT_FOUND, "bin=" + bin)))
+                                .flatMap(current ->
+                                        Mono.defer(() -> Mono.just(current.changeStatus(newStatus, updatedByNullable)))
+                                                .onErrorMap(IllegalArgumentException.class,
+                                                        e -> new AppException(AppError.BIN_INVALID_DATA, e.getMessage()))
+                                                .flatMap(repo::save)
+                                )
                 )
                 .doOnSuccess(b -> log.info("UC:ChangeStatus:done bin={}, status={}, elapsedMs={}",
-                        b.bin(), b.status(), ms(t0)))
-                .as(tx::transactional);
+                        b.bin(), b.status(), ms(t0)));
     }
 }

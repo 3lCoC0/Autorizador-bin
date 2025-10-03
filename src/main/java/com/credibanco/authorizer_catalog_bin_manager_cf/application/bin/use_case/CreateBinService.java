@@ -5,12 +5,12 @@ import com.credibanco.authorizer_catalog_bin_manager_cf.application.bin.port.out
 import com.credibanco.authorizer_catalog_bin_manager_cf.domain.bin.Bin;
 import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.exception.AppError;
 import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.exception.AppException;
+import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.util.BlockingTransactionExecutor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.transaction.reactive.TransactionalOperator;
 import reactor.core.publisher.Mono;
 
 @Slf4j
-public record CreateBinService(BinRepository repo, TransactionalOperator tx)
+public record CreateBinService(BinRepository repo, BlockingTransactionExecutor txExecutor)
         implements CreateBinUseCase {
 
     @Override
@@ -35,12 +35,13 @@ public record CreateBinService(BinRepository repo, TransactionalOperator tx)
                             .onErrorMap(IllegalArgumentException.class,
                                     e -> new AppException(AppError.BIN_INVALID_DATA, e.getMessage()));
                 })
-                .flatMap(aggregate -> repo.existsById(bin)
-                        .flatMap(exists -> exists
-                                ? Mono.error(new AppException(AppError.BIN_ALREADY_EXISTS))
-                                : repo.save(aggregate)))
+                .flatMap(aggregate -> txExecutor.executeMono(() ->
+                        repo.existsById(bin)
+                                .flatMap(exists -> exists
+                                        ? Mono.<Bin>error(new AppException(AppError.BIN_ALREADY_EXISTS))
+                                        : repo.save(aggregate))
+                ))
                 .doOnSuccess(b -> log.info("UC:CreateBin:done bin={}, elapsedMs={}",
-                        b.bin(), (System.nanoTime() - t0) / 1_000_000))
-                .as(tx::transactional);
+                        b.bin(), (System.nanoTime() - t0) / 1_000_000));
     }
 }

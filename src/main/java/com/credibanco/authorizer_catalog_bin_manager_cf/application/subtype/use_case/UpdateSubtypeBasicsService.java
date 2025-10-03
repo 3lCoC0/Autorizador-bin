@@ -6,15 +6,15 @@ import com.credibanco.authorizer_catalog_bin_manager_cf.application.subtype.port
 import com.credibanco.authorizer_catalog_bin_manager_cf.domain.subtype.Subtype;
 import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.exception.AppError;
 import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.exception.AppException;
+import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.util.BlockingTransactionExecutor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.transaction.reactive.TransactionalOperator;
 import reactor.core.publisher.Mono;
 
 @Slf4j
 public record UpdateSubtypeBasicsService(
         SubtypeRepository repo,
         BinReadOnlyRepository binRepo,
-        TransactionalOperator tx
+        BlockingTransactionExecutor txExecutor
 ) implements UpdateSubtypeBasicsUseCase {
 
     private static long ms(long t0) { return (System.nanoTime() - t0) / 1_000_000; }
@@ -29,41 +29,42 @@ public record UpdateSubtypeBasicsService(
         log.debug("UC:Subtype:Update:start bin={} code={} ownerIdType={} ext?={}",
                 bin, subtypeCode, ownerIdType, newBinExt != null);
 
-        return repo.findByPk(bin, subtypeCode)
-                .switchIfEmpty(Mono.error(new AppException(AppError.SUBTYPE_NOT_FOUND)))
-                .flatMap(current ->
-                        binRepo.getExtConfig(current.bin())
-                                .switchIfEmpty(Mono.error(new AppException(AppError.BIN_NOT_FOUND)))
-                                .flatMap(cfg -> {
-                                    String normExt;
-                                    try {
-                                        normExt = normalizeExtAgainstConfig(current.bin(), newBinExt, cfg.usesBinExt(), cfg.binExtDigits());
-                                    } catch (IllegalArgumentException iae) {
-                                        return Mono.error(new AppException(AppError.SUBTYPE_INVALID_DATA, iae.getMessage()));
-                                    }
+        return txExecutor.executeMono(() ->
+                        repo.findByPk(bin, subtypeCode)
+                                .switchIfEmpty(Mono.error(new AppException(AppError.SUBTYPE_NOT_FOUND)))
+                                .flatMap(current ->
+                                        binRepo.getExtConfig(current.bin())
+                                                .switchIfEmpty(Mono.error(new AppException(AppError.BIN_NOT_FOUND)))
+                                                .flatMap(cfg -> {
+                                                    String normExt;
+                                                    try {
+                                                        normExt = normalizeExtAgainstConfig(current.bin(), newBinExt, cfg.usesBinExt(), cfg.binExtDigits());
+                                                    } catch (IllegalArgumentException iae) {
+                                                        return Mono.error(new AppException(AppError.SUBTYPE_INVALID_DATA, iae.getMessage()));
+                                                    }
 
-                                    Subtype updated;
-                                    try {
-                                        updated = current.updateBasics(name, description, ownerIdType, ownerIdNumber, normExt, updatedByNullable);
-                                    } catch (IllegalArgumentException iae) {
-                                        return Mono.error(new AppException(AppError.SUBTYPE_INVALID_DATA, iae.getMessage()));
-                                    }
+                                                    Subtype updated;
+                                                    try {
+                                                        updated = current.updateBasics(name, description, ownerIdType, ownerIdNumber, normExt, updatedByNullable);
+                                                    } catch (IllegalArgumentException iae) {
+                                                        return Mono.error(new AppException(AppError.SUBTYPE_INVALID_DATA, iae.getMessage()));
+                                                    }
 
-                                    boolean extChanged = (current.binExt() == null && updated.binExt() != null)
-                                            || (current.binExt() != null && !current.binExt().equals(updated.binExt()));
+                                                    boolean extChanged = (current.binExt() == null && updated.binExt() != null)
+                                                            || (current.binExt() != null && !current.binExt().equals(updated.binExt()));
 
-                                    Mono<Boolean> extExists = extChanged && updated.binExt() != null
-                                            ? repo.existsByBinAndExt(updated.bin(), updated.binExt())
-                                            : Mono.just(false);
+                                                    Mono<Boolean> extExists = extChanged && updated.binExt() != null
+                                                            ? repo.existsByBinAndExt(updated.bin(), updated.binExt())
+                                                            : Mono.just(false);
 
-                                    return extExists.flatMap(exists -> exists
-                                            ? Mono.error(new AppException(AppError.SUBTYPE_ALREADY_EXISTS, "bin_ext ya usado para ese BIN"))
-                                            : repo.save(updated));
-                                })
+                                                    return extExists.flatMap(exists -> exists
+                                                            ? Mono.error(new AppException(AppError.SUBTYPE_ALREADY_EXISTS, "bin_ext ya usado para ese BIN"))
+                                                            : repo.save(updated));
+                                                })
+                )
                 )
                 .doOnSuccess(s -> log.info("UC:Subtype:Update:done bin={} code={} elapsedMs={}",
-                        s.bin(), s.subtypeCode(), ms(t0)))
-                .as(tx::transactional);
+                        s.bin(), s.subtypeCode(), ms(t0)));
     }
 
     private static String normalizeExtAgainstConfig(String bin, String rawExt, String uses, Integer digits) {

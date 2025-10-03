@@ -8,8 +8,8 @@ import com.credibanco.authorizer_catalog_bin_manager_cf.application.plan.port.ou
 import com.credibanco.authorizer_catalog_bin_manager_cf.domain.plan.SubtypePlanLink;
 import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.exception.AppError;
 import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.exception.AppException;
+import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.util.BlockingTransactionExecutor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.transaction.reactive.TransactionalOperator;
 import reactor.core.publisher.Mono;
 
 @Slf4j
@@ -17,7 +17,7 @@ public record AssignPlanToSubtypeService(CommercePlanRepository planRepo,
                                          SubtypePlanRepository subRepo,
                                          SubtypeReadOnlyRepository subtypeRepo,
                                          CommercePlanItemRepository itemRepo,
-                                         TransactionalOperator tx)
+                                         BlockingTransactionExecutor txExecutor)
         implements AssignPlanToSubtypeUseCase {
 
     @Override
@@ -28,20 +28,20 @@ public record AssignPlanToSubtypeService(CommercePlanRepository planRepo,
                 .flatMap(exists -> exists ? Mono.empty()
                         : Mono.<Void>error(new AppException(AppError.SUBTYPE_NOT_FOUND)));
 
-        return ensureSubtype
-                .then(planRepo.findByCode(planCode)
-                        .switchIfEmpty(Mono.<com.credibanco.authorizer_catalog_bin_manager_cf.domain.plan.CommercePlan>error(
-                                new AppException(AppError.PLAN_NOT_FOUND))))
-                // Regla: el plan debe tener al menos 1 ítem ACTIVO
-                .flatMap(plan -> itemRepo.existsActiveByPlanId(plan.planId())
-                        .flatMap(hasActive -> hasActive
-                                ? Mono.just(plan)
-                                : Mono.<com.credibanco.authorizer_catalog_bin_manager_cf.domain.plan.CommercePlan>error(
-                                new AppException(AppError.PLAN_ASSIGNMENT_CONFLICT,
-                                        "El plan no tiene ítems activos; no se puede asignar"))))
-                .flatMap(p -> subRepo.upsert(subtypeCode, p.planId(), by)
-                        .then(subRepo.findBySubtype(subtypeCode)))
-                .as(tx::transactional)
+        return txExecutor.executeMono(() ->
+                        ensureSubtype
+                                .then(planRepo.findByCode(planCode)
+                                        .switchIfEmpty(Mono.<com.credibanco.authorizer_catalog_bin_manager_cf.domain.plan.CommercePlan>error(
+                                                new AppException(AppError.PLAN_NOT_FOUND))))
+                                .flatMap(plan -> itemRepo.existsActiveByPlanId(plan.planId())
+                                        .flatMap(hasActive -> hasActive
+                                                ? Mono.just(plan)
+                                                : Mono.<com.credibanco.authorizer_catalog_bin_manager_cf.domain.plan.CommercePlan>error(
+                                                new AppException(AppError.PLAN_ASSIGNMENT_CONFLICT,
+                                                        "El plan no tiene ítems activos; no se puede asignar"))))
+                                .flatMap(p -> subRepo.upsert(subtypeCode, p.planId(), by)
+                                        .then(subRepo.findBySubtype(subtypeCode)))
+                )
                 .doOnSuccess(link -> log.info("AssignPlanToSubtype OK subtype={} planId={}", subtypeCode, link.planId()));
     }
 }

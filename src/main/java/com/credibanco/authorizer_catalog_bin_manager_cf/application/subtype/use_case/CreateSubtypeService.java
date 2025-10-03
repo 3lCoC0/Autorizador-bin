@@ -7,8 +7,8 @@ import com.credibanco.authorizer_catalog_bin_manager_cf.application.subtype.port
 import com.credibanco.authorizer_catalog_bin_manager_cf.domain.subtype.Subtype;
 import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.exception.AppError;
 import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.exception.AppException;
+import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.util.BlockingTransactionExecutor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.transaction.reactive.TransactionalOperator;
 import reactor.core.publisher.Mono;
 
 @Slf4j
@@ -16,7 +16,7 @@ public record CreateSubtypeService(
         SubtypeRepository repo,
         BinReadOnlyRepository binRepo,
         IdTypeReadOnlyRepository idTypeRepo,
-        TransactionalOperator tx
+        BlockingTransactionExecutor txExecutor
 ) implements CreateSubtypeUseCase {
 
     private static long ms(long t0) { return (System.nanoTime() - t0) / 1_000_000; }
@@ -33,7 +33,8 @@ public record CreateSubtypeService(
         Mono<Boolean> fkIdTypeOk = (ownerIdType == null || ownerIdType.isBlank())
                 ? Mono.just(true) : idTypeRepo.existsById(ownerIdType);
 
-        return Mono.zip(cfgMono, fkIdTypeOk)
+        return txExecutor.executeMono(() ->
+                Mono.zip(cfgMono, fkIdTypeOk)
                 .flatMap(t -> {
                     var cfg = t.getT1();
                     boolean idTypeOk = t.getT2();
@@ -74,9 +75,9 @@ public record CreateSubtypeService(
                                 return repo.save(draft);
                             });
                 })
+                )
                 .doOnSuccess(s -> log.info("UC:Subtype:Create:done bin={} code={} status={} elapsedMs={}",
-                        s.bin(), s.subtypeCode(), s.status(), ms(t0)))
-                .as(tx::transactional);
+                        s.bin(), s.subtypeCode(), s.status(), ms(t0)));
     }
 
     private static String normalizeExtAgainstConfig(String bin, String rawExt, String uses, Integer digits) {

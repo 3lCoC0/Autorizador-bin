@@ -4,6 +4,7 @@ import com.credibanco.authorizer_catalog_bin_manager_cf.application.plan.port.ou
 import com.credibanco.authorizer_catalog_bin_manager_cf.domain.plan.PlanItem;
 import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.port.outbound.jpa.entity.CommercePlanItemEntity;
 import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.port.outbound.jpa.repository.CommercePlanItemJpaRepository;
+import com.credibanco.authorizer_catalog_bin_manager_cf.infrastructure.util.BlockingExecutor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -11,7 +12,6 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 import java.time.OffsetDateTime;
 import java.util.HashSet;
@@ -24,27 +24,26 @@ import java.util.Set;
 public class JpaCommercePlanItemRepository implements CommercePlanItemRepository {
 
     private final CommercePlanItemJpaRepository repository;
+    private final BlockingExecutor blockingExecutor;
 
     @Override
     public Mono<PlanItem> insertMcc(Long planId, String mcc, String by) {
-        return Mono.fromCallable(() -> repository.save(CommercePlanItemEntity.newMcc(planId, mcc, by, OffsetDateTime.now())).toDomain())
-                .subscribeOn(Schedulers.boundedElastic());
+        return blockingExecutor.mono(() -> repository.save(CommercePlanItemEntity.newMcc(planId, mcc, by, OffsetDateTime.now())).toDomain());
     }
 
     @Override
     public Mono<PlanItem> changeStatus(Long planId, String value, String newStatus, String updatedBy) {
-        return Mono.defer(() -> {
-                    Optional<CommercePlanItemEntity> optional = findEntityByValue(planId, value);
-                    if (optional.isEmpty()) {
-                        return Mono.empty();
-                    }
-                    CommercePlanItemEntity entity = optional.get();
-                    entity.setStatus(newStatus);
-                    entity.setUpdatedAt(OffsetDateTime.now());
-                    entity.setUpdatedBy(updatedBy);
-                    return Mono.fromCallable(() -> repository.save(entity).toDomain());
-                })
-                .subscribeOn(Schedulers.boundedElastic());
+        return blockingExecutor.mono(() -> {
+            Optional<CommercePlanItemEntity> optional = findEntityByValue(planId, value);
+            if (optional.isEmpty()) {
+                return null;
+            }
+            CommercePlanItemEntity entity = optional.get();
+            entity.setStatus(newStatus);
+            entity.setUpdatedAt(OffsetDateTime.now());
+            entity.setUpdatedBy(updatedBy);
+            return repository.save(entity).toDomain();
+        });
     }
 
     @Override
@@ -56,26 +55,25 @@ public class JpaCommercePlanItemRepository implements CommercePlanItemRepository
             spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), status));
         }
         Specification<CommercePlanItemEntity> finalSpec = spec;
-        return Flux.defer(() -> {
-                    List<PlanItem> items = repository.findAll(finalSpec,
-                                    PageRequest.of(p, s, Sort.by("planItemId").descending()))
-                            .map(CommercePlanItemEntity::toDomain)
-                            .getContent();
-                    return Flux.fromIterable(items);
-                })
-                .subscribeOn(Schedulers.boundedElastic());
+        return blockingExecutor.flux(() -> {
+            List<PlanItem> items = repository.findAll(finalSpec,
+                            PageRequest.of(p, s, Sort.by("planItemId").descending()))
+                    .map(CommercePlanItemEntity::toDomain)
+                    .getContent();
+            return items;
+        });
     }
 
     @Override
     public Mono<PlanItem> insertMerchant(Long planId, String merchantId, String updatedBy) {
-        return Mono.fromCallable(() -> repository.save(CommercePlanItemEntity.newMerchant(planId, merchantId, updatedBy, OffsetDateTime.now())).toDomain())
-                .subscribeOn(Schedulers.boundedElastic());
+        return blockingExecutor.mono(() -> repository.save(CommercePlanItemEntity.newMerchant(planId, merchantId, updatedBy, OffsetDateTime.now())).toDomain());
     }
 
     @Override
     public Mono<PlanItem> findByValue(Long planId, String value) {
-        return Mono.defer(() -> Mono.justOrEmpty(findEntityByValue(planId, value).map(CommercePlanItemEntity::toDomain)))
-                .subscribeOn(Schedulers.boundedElastic());
+        return blockingExecutor.mono(() -> findEntityByValue(planId, value)
+                .map(CommercePlanItemEntity::toDomain)
+                .orElse(null));
     }
 
     @Override
@@ -83,8 +81,7 @@ public class JpaCommercePlanItemRepository implements CommercePlanItemRepository
         if (values == null || values.isEmpty()) {
             return Flux.empty();
         }
-        return Flux.defer(() -> Flux.fromIterable(repository.findExistingValues(planId, values)))
-                .subscribeOn(Schedulers.boundedElastic());
+        return blockingExecutor.flux(() -> repository.findExistingValues(planId, values));
     }
 
     @Override
@@ -92,17 +89,16 @@ public class JpaCommercePlanItemRepository implements CommercePlanItemRepository
         if (mccs == null || mccs.isEmpty()) {
             return Mono.just(0);
         }
-        return Mono.fromCallable(() -> {
-                    Set<String> existing = new HashSet<>(repository.findExistingValues(planId, mccs));
-                    OffsetDateTime now = OffsetDateTime.now();
-                    List<CommercePlanItemEntity> toSave = mccs.stream()
-                            .filter(v -> !existing.contains(v))
-                            .map(v -> CommercePlanItemEntity.newMcc(planId, v, by, now))
-                            .toList();
-                    repository.saveAll(toSave);
-                    return toSave.size();
-                })
-                .subscribeOn(Schedulers.boundedElastic());
+        return blockingExecutor.mono(() -> {
+            Set<String> existing = new HashSet<>(repository.findExistingValues(planId, mccs));
+            OffsetDateTime now = OffsetDateTime.now();
+            List<CommercePlanItemEntity> toSave = mccs.stream()
+                    .filter(v -> !existing.contains(v))
+                    .map(v -> CommercePlanItemEntity.newMcc(planId, v, by, now))
+                    .toList();
+            repository.saveAll(toSave);
+            return toSave.size();
+        });
     }
 
     @Override
@@ -110,23 +106,21 @@ public class JpaCommercePlanItemRepository implements CommercePlanItemRepository
         if (mids == null || mids.isEmpty()) {
             return Mono.just(0);
         }
-        return Mono.fromCallable(() -> {
-                    Set<String> existing = new HashSet<>(repository.findExistingValues(planId, mids));
-                    OffsetDateTime now = OffsetDateTime.now();
-                    List<CommercePlanItemEntity> toSave = mids.stream()
-                            .filter(v -> !existing.contains(v))
-                            .map(v -> CommercePlanItemEntity.newMerchant(planId, v, by, now))
-                            .toList();
-                    repository.saveAll(toSave);
-                    return toSave.size();
-                })
-                .subscribeOn(Schedulers.boundedElastic());
+        return blockingExecutor.mono(() -> {
+            Set<String> existing = new HashSet<>(repository.findExistingValues(planId, mids));
+            OffsetDateTime now = OffsetDateTime.now();
+            List<CommercePlanItemEntity> toSave = mids.stream()
+                    .filter(v -> !existing.contains(v))
+                    .map(v -> CommercePlanItemEntity.newMerchant(planId, v, by, now))
+                    .toList();
+            repository.saveAll(toSave);
+            return toSave.size();
+        });
     }
 
     @Override
     public Mono<Boolean> existsActiveByPlanId(Long planId) {
-        return Mono.fromCallable(() -> repository.existsByPlanIdAndStatus(planId, "A"))
-                .subscribeOn(Schedulers.boundedElastic());
+        return blockingExecutor.mono(() -> repository.existsByPlanIdAndStatus(planId, "A"));
     }
 
     private Optional<CommercePlanItemEntity> findEntityByValue(Long planId, String value) {
