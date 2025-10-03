@@ -20,13 +20,13 @@ import reactor.core.publisher.Mono;
 
 import io.netty.channel.ConnectTimeoutException;
 import io.netty.handler.timeout.ReadTimeoutException;
-import io.r2dbc.spi.R2dbcTimeoutException;
 
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.TimeoutException;
+import java.sql.SQLTimeoutException;
 
 /**
  * Handler global de errores.
@@ -210,7 +210,7 @@ public class GlobalErrorHandler implements ErrorWebExceptionHandler {
 
     private boolean isTimeout(Throwable ex) {
         return findCause(ex, TimeoutException.class) != null
-                || findCause(ex, R2dbcTimeoutException.class) != null
+                || findCause(ex, SQLTimeoutException.class) != null
                 || findCause(ex, SocketTimeoutException.class) != null
                 || findCause(ex, ReadTimeoutException.class) != null
                 || findCause(ex, ConnectTimeoutException.class) != null;

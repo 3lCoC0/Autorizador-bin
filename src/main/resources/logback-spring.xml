@@ -8,8 +8,8 @@
         </encoder>
     </appender>
 
-    <logger name="org.springframework.r2dbc.core.DefaultDatabaseClient" level="DEBUG"/>
-    <logger name="io.r2dbc" level="INFO"/>
+    <logger name="org.springframework.jdbc.core.JdbcTemplate" level="DEBUG"/>
+    <logger name="org.hibernate.SQL" level="DEBUG"/>
     <logger name="oracle" level="INFO"/>
 
     <root level="INFO">
